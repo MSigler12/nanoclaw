@@ -62,6 +62,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { initTrust } from './trust.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -575,6 +576,14 @@ async function main(): Promise<void> {
   // Recovers from missed creates (e.g. OneCLI was down at registration time).
   for (const [jid, group] of Object.entries(registeredGroups)) {
     ensureOneCLIAgent(jid, group);
+  }
+
+  // Initialize trust model — find main group and its owner
+  const mainEntry = Object.entries(registeredGroups).find(
+    ([, g]) => g.isMain === true,
+  );
+  if (mainEntry) {
+    initTrust(mainEntry[0]);
   }
 
   restoreRemoteControl();

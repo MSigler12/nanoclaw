@@ -6,6 +6,15 @@ import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
+  classifySender,
+  getMainChatJid,
+  getUnknownSenderAlert,
+  getUnknownSenderRefusal,
+  getDraftModeNotice,
+  verifyPin,
+  isTrustConfigured,
+} from '../trust.js';
+import {
   Channel,
   OnChatMetadata,
   OnInboundMessage,
@@ -80,9 +89,57 @@ export class TelegramChannel implements Channel {
       ctx.reply(`${ASSISTANT_NAME} is online.`);
     });
 
+    // PIN verification command
+    this.bot.command('verify', async (ctx) => {
+      const senderId = ctx.from?.id.toString() || '';
+      const pin = ctx.message?.text?.split(/\s+/)[1] || '';
+
+      if (!isTrustConfigured()) {
+        ctx.reply(
+          '_Trust system not configured. PIN file missing._',
+          { parse_mode: 'Markdown' },
+        );
+        return;
+      }
+
+      if (!pin) {
+        ctx.reply('Usage: `/verify <PIN>`', { parse_mode: 'Markdown' });
+        return;
+      }
+
+      // Delete the message containing the PIN for security
+      try {
+        await ctx.deleteMessage();
+      } catch {
+        // May fail if bot lacks delete permissions — not critical
+      }
+
+      if (verifyPin(senderId, pin)) {
+        ctx.reply('Verified. Full access granted for 24 hours.');
+      } else {
+        const senderName = ctx.from?.first_name || 'Unknown';
+        logger.warn(
+          { senderId, senderName },
+          'Trust: failed PIN attempt',
+        );
+        ctx.reply('Verification failed.');
+
+        // Alert main chat about failed attempt
+        const mainJid = getMainChatJid();
+        if (mainJid && this.bot) {
+          const mainId = mainJid.replace(/^tg:/, '');
+          sendTelegramMessage(
+            this.bot.api,
+            mainId,
+            `*Trust Alert*\nFailed PIN attempt from ${senderName} (ID: \`${senderId}\`)`,
+          ).catch(() => {});
+        }
+      }
+    });
+
     // Telegram bot commands handled above — skip them in the general handler
     // so they don't also get stored as messages. All other /commands flow through.
-    const TELEGRAM_BOT_COMMANDS = new Set(['chatid', 'ping']);
+    const TELEGRAM_BOT_COMMANDS = new Set(['chatid', 'ping', 'verify']);
 
     this.bot.on('message:text', async (ctx) => {
       if (ctx.message.text.startsWith('/')) {
@@ -149,20 +206,69 @@ export class TelegramChannel implements Channel {
         return;
       }
 
+      // --- Trust model enforcement ---
+      const trust = classifySender(sender, senderName, chatJid);
+
+      if (trust.tier === 'unknown') {
+        // Reject with polite refusal
+        const threadOpts = threadId
+          ? { message_thread_id: threadId }
+          : {};
+        await sendTelegramMessage(
+          this.bot!.api,
+          ctx.chat.id.toString(),
+          getUnknownSenderRefusal(senderName),
+          threadOpts,
+        );
+
+        // Alert main chat
+        const mainJid = getMainChatJid();
+        if (mainJid && this.bot) {
+          const mainId = mainJid.replace(/^tg:/, '');
+          await sendTelegramMessage(
+            this.bot.api,
+            mainId,
+            getUnknownSenderAlert(sender, senderName, chatJid, content),
+          ).catch(() => {});
+        }
+
+        logger.warn(
+          { chatJid, sender, senderName, tier: 'unknown' },
+          'Trust: rejected unknown sender',
+        );
+        return;
+      }
+
+      // Tag draft-only messages so the agent knows the constraint
+      let taggedContent = content;
+      if (trust.tier === 'known') {
+        taggedContent = `[DRAFT-ONLY sender="${senderName}" tier=known] ${content}`;
+        // Send one-time notice about draft-only mode
+        const threadOpts = threadId
+          ? { message_thread_id: threadId }
+          : {};
+        await sendTelegramMessage(
+          this.bot!.api,
+          ctx.chat.id.toString(),
+          getDraftModeNotice(senderName),
+          threadOpts,
+        );
+      }
+
       // Deliver message — startMessageLoop() will pick it up
       this.opts.onMessage(chatJid, {
         id: msgId,
         chat_jid: chatJid,
         sender,
         sender_name: senderName,
-        content,
+        content: taggedContent,
         timestamp,
         is_from_me: false,
         thread_id: threadId ? threadId.toString() : undefined,
       });
 
       logger.info(
-        { chatJid, chatName, sender: senderName },
+        { chatJid, chatName, sender: senderName, tier: trust.tier },
         'Telegram message stored',
       );
     });

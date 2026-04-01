@@ -24,6 +24,17 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
+// Mock trust module — all senders classified as verified by default in tests
+vi.mock('../trust.js', () => ({
+  classifySender: vi.fn(() => ({ tier: 'verified', senderId: '42', senderName: 'Test', chatJid: 'tg:100200300' })),
+  getMainChatJid: vi.fn(() => null),
+  getUnknownSenderAlert: vi.fn(() => 'alert'),
+  getUnknownSenderRefusal: vi.fn(() => 'refused'),
+  getDraftModeNotice: vi.fn(() => 'draft mode'),
+  verifyPin: vi.fn(() => false),
+  isTrustConfigured: vi.fn(() => false),
+}));
+
 // --- Grammy mock ---
 
 type Handler = (...args: any[]) => any;
