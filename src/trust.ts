@@ -98,20 +98,27 @@ function decryptPin(): string | null {
 // ---------------------------------------------------------------------------
 
 interface KnownSendersConfig {
-  senders: string[]; // Telegram user IDs
+  verifiedSenders?: string[]; // Always-verified across all chats (no PIN needed)
+  senders: string[]; // Known tier (draft-only)
+}
+
+function loadSendersConfig(): KnownSendersConfig {
+  try {
+    const raw = fs.readFileSync(KNOWN_SENDERS_PATH, 'utf-8');
+    return JSON.parse(raw) as KnownSendersConfig;
+  } catch {
+    return { senders: [] };
+  }
+}
+
+function loadVerifiedSenders(): Set<string> {
+  const cfg = loadSendersConfig();
+  return new Set((cfg.verifiedSenders || []).map(String));
 }
 
 function loadKnownSenders(): Set<string> {
-  try {
-    const raw = fs.readFileSync(KNOWN_SENDERS_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as KnownSendersConfig;
-    if (Array.isArray(parsed.senders)) {
-      return new Set(parsed.senders.map(String));
-    }
-  } catch {
-    // File doesn't exist or invalid — no known senders beyond main owner
-  }
-  return new Set();
+  const cfg = loadSendersConfig();
+  return new Set((cfg.senders || []).map(String));
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +156,13 @@ export function classifySender(
 
   // Main channel owner is always verified
   if (mainOwnerId && senderId === mainOwnerId) {
+    result.tier = 'verified';
+    return result;
+  }
+
+  // Config-based always-verified senders (no PIN needed)
+  const alwaysVerified = loadVerifiedSenders();
+  if (alwaysVerified.has(senderId)) {
     result.tier = 'verified';
     return result;
   }
