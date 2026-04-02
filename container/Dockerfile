@@ -3,7 +3,7 @@
 
 FROM node:22-slim
 
-# Install system dependencies for Chromium
+# Install system dependencies for Chromium and document generation
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libcups2 \
     libdrm2 \
     libxshmfence1 \
+    libreoffice-writer \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/*
