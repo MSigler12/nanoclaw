@@ -1,0 +1,52 @@
+{
+  "LA": {
+    "name": "Louisiana Department of Health — Health Standards Section",
+    "url": "https://ldh.la.gov/page/health-standards",
+    "description": "State survey and certification updates for Louisiana healthcare facilities"
+  },
+  "TX": {
+    "name": "Texas HHSC — Regulatory Services",
+    "url": "https://www.hhs.texas.gov/providers/health-care-facilities-regulation",
+    "description": "Texas facility regulation updates, survey findings, enforcement actions"
+  },
+  "MS": {
+    "name": "Mississippi State Department of Health — Health Facilities Licensure",
+    "url": "https://msdh.ms.gov/page/30,0,83.html",
+    "description": "Mississippi facility licensure and survey updates"
+  },
+  "AL": {
+    "name": "Alabama Department of Public Health — Provider Services",
+    "url": "https://www.alabamapublichealth.gov/providerstandards/",
+    "description": "Alabama healthcare provider standards and survey updates"
+  },
+  "AR": {
+    "name": "Arkansas Department of Health — Health Facility Services",
+    "url": "https://www.healthy.arkansas.gov/programs-services/topics/health-facility-services",
+    "description": "Arkansas facility licensure and certification updates"
+  },
+  "TN": {
+    "name": "Tennessee Department of Health — Health Care Facilities",
+    "url": "https://www.tn.gov/health/health-program-areas/hcf.html",
+    "description": "Tennessee healthcare facility regulation and survey updates"
+  },
+  "FL": {
+    "name": "Florida AHCA — Health Facility Regulation",
+    "url": "https://ahca.myflorida.com/health-facility-regulation",
+    "description": "Florida health facility regulation, licensure, and survey updates"
+  },
+  "GA": {
+    "name": "Georgia DCH — Healthcare Facility Regulation",
+    "url": "https://dch.georgia.gov/healthcare-facility-regulation",
+    "description": "Georgia healthcare facility regulation and survey updates"
+  },
+  "OK": {
+    "name": "Oklahoma State Department of Health — Medical Facilities Service",
+    "url": "https://oklahoma.gov/health/protective-health/medical-facilities-service.html",
+    "description": "Oklahoma medical facilities regulation and survey updates"
+  },
+  "MO": {
+    "name": "Missouri DHSS — Section for Health Standards and Licensure",
+    "url": "https://health.mo.gov/safety/healthservregs/",
+    "description": "Missouri health standards, licensure, and facility regulation updates"
+  }
+}

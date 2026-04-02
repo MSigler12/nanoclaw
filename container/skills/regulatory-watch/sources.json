@@ -1,0 +1,79 @@
+{
+  "cms_ncd": {
+    "name": "CMS National Coverage Determinations",
+    "category": "CMS COVERAGE",
+    "type": "mcp",
+    "tool": "search_national_coverage",
+    "params": { "document_type": "ncd" },
+    "description": "New or revised NCDs affecting RHC services, physical therapy, DME, lab tests",
+    "relevanceFilter": "Rural Health Clinic, physical therapy, outpatient, DME, laboratory"
+  },
+  "cms_lcd": {
+    "name": "CMS Local Coverage Determinations",
+    "category": "CMS COVERAGE",
+    "type": "mcp",
+    "tool": "search_local_coverage",
+    "params": { "document_type": "lcd" },
+    "description": "New or revised LCDs from MACs in monitored states",
+    "relevanceFilter": "Rural Health Clinic, RHC, outpatient services"
+  },
+  "cms_nca": {
+    "name": "CMS National Coverage Analyses",
+    "category": "CMS COVERAGE",
+    "type": "mcp",
+    "tool": "search_national_coverage",
+    "params": { "document_type": "nca" },
+    "description": "Proposed and in-progress national coverage decisions"
+  },
+  "cms_mln": {
+    "name": "MLN Matters Articles",
+    "category": "CMS COVERAGE",
+    "type": "web",
+    "url": "https://www.cms.gov/medicare/regulations-guidance/manuals/mln-matters-articles",
+    "description": "Operational guidance for RHC billing, coverage changes, and provider updates. Most operationally relevant CMS source for RHC clients.",
+    "relevanceFilter": "Rural Health Clinic, RHC, provider enrollment, billing, reimbursement"
+  },
+  "federal_register": {
+    "name": "Federal Register — 42 CFR Part 491",
+    "category": "FEDERAL REGISTER",
+    "type": "api",
+    "url": "https://www.federalregister.gov/api/v1/documents.json",
+    "params": {
+      "conditions[cfr][title]": "42",
+      "conditions[cfr][part]": "491",
+      "conditions[agencies][]": "centers-for-medicare-medicaid-services",
+      "order": "newest",
+      "per_page": "20"
+    },
+    "description": "Federal Register documents affecting 42 CFR Part 491 (Rural Health Clinics). Includes proposed rules, final rules, and notices.",
+    "relevanceFilter": "All results are relevant — this is a targeted CFR query"
+  },
+  "tjc": {
+    "name": "The Joint Commission",
+    "category": "ACCREDITATION",
+    "type": "web",
+    "url": "https://www.jointcommission.org/resources/news-and-multimedia/newsletters/",
+    "secondaryUrls": [
+      "https://www.jointcommission.org/standards/r3-report/",
+      "https://www.jointcommission.org/resources/sentinel-event/"
+    ],
+    "description": "Standards updates, R3 Reports (rationale for requirements), Sentinel Event Alerts",
+    "relevanceFilter": "Ambulatory care, hospital accreditation, patient safety, survey process"
+  },
+  "carf": {
+    "name": "CARF International",
+    "category": "ACCREDITATION",
+    "type": "web",
+    "url": "https://www.carf.org/resources/news/",
+    "description": "Accreditation standards updates, policy changes, and provider bulletins",
+    "relevanceFilter": "Accreditation standards, behavioral health, medical rehabilitation"
+  },
+  "aaahc": {
+    "name": "AAAHC (Quad A)",
+    "category": "ACCREDITATION",
+    "type": "web",
+    "url": "https://www.aaahc.org/news-and-events/news/",
+    "description": "Ambulatory surgery center accreditation updates, standards revisions, compliance alerts",
+    "relevanceFilter": "ASC accreditation, ambulatory care, survey preparation, compliance"
+  }
+}
