@@ -6,6 +6,7 @@ import { CronExpressionParser } from 'cron-parser';
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { searchDrive, readDriveFile } from './drive.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
@@ -92,6 +93,18 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC message attempt blocked',
                   );
                 }
+              } else if (
+                data.type === 'search_drive' &&
+                data.requestId &&
+                data.query
+              ) {
+                await handleDriveSearch(data, sourceGroup, ipcBaseDir);
+              } else if (
+                data.type === 'read_drive_file' &&
+                data.requestId &&
+                data.fileId
+              ) {
+                await handleDriveRead(data, sourceGroup, ipcBaseDir);
               }
               fs.unlinkSync(filePath);
             } catch (err) {
@@ -441,9 +454,9 @@ export async function processTaskIpc(
           );
           break;
         }
-        // Defense in depth: agent cannot set isMain via IPC.                                                                                                                                    
-        // Preserve isMain from the existing registration so IPC config                                                                                                                          
-        // updates (e.g. adding additionalMounts) don't strip the flag.                                                                                                                          
+        // Defense in depth: agent cannot set isMain via IPC.
+        // Preserve isMain from the existing registration so IPC config
+        // updates (e.g. adding additionalMounts) don't strip the flag.
         const existingGroup = registeredGroups[data.jid];
         deps.registerGroup(data.jid, {
           name: data.name,
@@ -464,5 +477,80 @@ export async function processTaskIpc(
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Google Drive IPC handlers
+// ---------------------------------------------------------------------------
+
+function writeDriveResponse(
+  ipcBaseDir: string,
+  sourceGroup: string,
+  requestId: string,
+  payload: object,
+): void {
+  const inputDir = path.join(ipcBaseDir, sourceGroup, 'input');
+  fs.mkdirSync(inputDir, { recursive: true });
+  const responseFile = path.join(
+    inputDir,
+    `${Date.now()}-drive-${requestId}.json`,
+  );
+  fs.writeFileSync(
+    responseFile,
+    JSON.stringify({ type: 'drive_response', requestId, ...payload }),
+    'utf-8',
+  );
+}
+
+async function handleDriveSearch(
+  data: Record<string, unknown>,
+  sourceGroup: string,
+  ipcBaseDir: string,
+): Promise<void> {
+  const requestId = data.requestId as string;
+  try {
+    const result = await searchDrive(
+      data.query as string,
+      data.fileType as string | undefined,
+      data.folderId as string | undefined,
+      data.maxResults as number | undefined,
+    );
+    writeDriveResponse(ipcBaseDir, sourceGroup, requestId, result);
+    logger.info(
+      { requestId, sourceGroup, query: data.query },
+      'Drive search completed via IPC',
+    );
+  } catch (err) {
+    logger.error({ err, requestId, sourceGroup }, 'Drive search IPC error');
+    writeDriveResponse(ipcBaseDir, sourceGroup, requestId, {
+      error: 'Drive search failed unexpectedly',
+    });
+  }
+}
+
+async function handleDriveRead(
+  data: Record<string, unknown>,
+  sourceGroup: string,
+  ipcBaseDir: string,
+): Promise<void> {
+  const requestId = data.requestId as string;
+  try {
+    const result = await readDriveFile(
+      data.fileId as string,
+      data.format as string | undefined,
+      data.maxLength as number | undefined,
+      data.offset as number | undefined,
+    );
+    writeDriveResponse(ipcBaseDir, sourceGroup, requestId, result);
+    logger.info(
+      { requestId, sourceGroup, fileId: data.fileId },
+      'Drive file read completed via IPC',
+    );
+  } catch (err) {
+    logger.error({ err, requestId, sourceGroup }, 'Drive read IPC error');
+    writeDriveResponse(ipcBaseDir, sourceGroup, requestId, {
+      error: 'Drive read failed unexpectedly',
+    });
   }
 }

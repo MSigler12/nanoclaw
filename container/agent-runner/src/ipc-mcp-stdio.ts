@@ -337,6 +337,180 @@ Use available_groups.json to find the JID for a group. The folder name must be c
   },
 );
 
+// ---------------------------------------------------------------------------
+// Google Drive tools (request-response IPC pattern)
+// ---------------------------------------------------------------------------
+
+const INPUT_DIR = path.join(IPC_DIR, 'input');
+const DRIVE_RESPONSE_TIMEOUT_MS = 30_000;
+const DRIVE_POLL_INTERVAL_MS = 200;
+
+/**
+ * Wait for a Drive response matching the given requestId.
+ * Polls the IPC input directory for a file containing the response.
+ */
+async function waitForDriveResponse(
+  requestId: string,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + DRIVE_RESPONSE_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    try {
+      if (fs.existsSync(INPUT_DIR)) {
+        const files = fs
+          .readdirSync(INPUT_DIR)
+          .filter((f) => f.includes(`drive-${requestId}`) && f.endsWith('.json'));
+        for (const file of files) {
+          const filePath = path.join(INPUT_DIR, file);
+          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          if (data.requestId === requestId && data.type === 'drive_response') {
+            fs.unlinkSync(filePath);
+            return data;
+          }
+        }
+      }
+    } catch {
+      // Ignore read errors during polling
+    }
+    await new Promise((resolve) => setTimeout(resolve, DRIVE_POLL_INTERVAL_MS));
+  }
+
+  return { error: 'Google Drive request timed out (30s)' };
+}
+
+server.tool(
+  'search_drive',
+  `Search Google Drive for documents. Returns file metadata (ID, name, path, modification date) that you can then read with read_drive_file.
+
+Use this to find internal Cottano Group documents: policies, SOPs, client files, rate schedules, contracts, and other organizational knowledge.`,
+  {
+    query: z
+      .string()
+      .describe('Search query — use document titles, keywords, or phrases'),
+    fileType: z
+      .enum(['document', 'spreadsheet', 'pdf', 'presentation'])
+      .optional()
+      .describe('Filter by file type'),
+    folderId: z
+      .string()
+      .optional()
+      .describe('Restrict search to a specific Drive folder ID'),
+    maxResults: z
+      .number()
+      .optional()
+      .default(10)
+      .describe('Maximum results to return (default: 10, max: 25)'),
+  },
+  async (args) => {
+    const requestId = `dr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    writeIpcFile(MESSAGES_DIR, {
+      type: 'search_drive',
+      requestId,
+      query: args.query,
+      fileType: args.fileType || undefined,
+      folderId: args.folderId || undefined,
+      maxResults: args.maxResults || 10,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    });
+
+    const response = await waitForDriveResponse(requestId);
+
+    if (response.error) {
+      return {
+        content: [{ type: 'text' as const, text: `Drive search error: ${response.error}` }],
+        isError: true,
+      };
+    }
+
+    const results = response.results as Array<Record<string, string>>;
+    if (!results || results.length === 0) {
+      return {
+        content: [{ type: 'text' as const, text: 'No documents found matching your query.' }],
+      };
+    }
+
+    const formatted = results
+      .map(
+        (r) =>
+          `- ${r.name}\n  ID: ${r.fileId} | Type: ${r.mimeType}\n  Path: ${r.path} | Modified: ${r.modifiedTime}${r.snippet ? `\n  ${r.snippet}` : ''}`,
+      )
+      .join('\n\n');
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Found ${results.length} document(s):\n\n${formatted}\n\nUse read_drive_file with the file ID to read a document's content.`,
+        },
+      ],
+    };
+  },
+);
+
+server.tool(
+  'read_drive_file',
+  `Read the content of a Google Drive file. Supports Google Docs, Sheets (as CSV), Slides, PDFs, and plain text files.
+
+Use after search_drive to retrieve the content of a specific document. For large documents, use maxLength and offset to read in chunks.`,
+  {
+    fileId: z.string().describe('The file ID from search_drive results'),
+    format: z
+      .enum(['text', 'markdown'])
+      .optional()
+      .default('text')
+      .describe('Output format (default: text). Markdown available for Google Docs.'),
+    maxLength: z
+      .number()
+      .optional()
+      .default(50000)
+      .describe('Maximum characters to return (default: 50000)'),
+    offset: z
+      .number()
+      .optional()
+      .default(0)
+      .describe('Start position for reading (default: 0). Use with maxLength for pagination.'),
+  },
+  async (args) => {
+    const requestId = `dr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    writeIpcFile(MESSAGES_DIR, {
+      type: 'read_drive_file',
+      requestId,
+      fileId: args.fileId,
+      format: args.format || 'text',
+      maxLength: args.maxLength || 50000,
+      offset: args.offset || 0,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    });
+
+    const response = await waitForDriveResponse(requestId);
+
+    if (response.error) {
+      return {
+        content: [{ type: 'text' as const, text: `Drive read error: ${response.error}` }],
+        isError: true,
+      };
+    }
+
+    const name = response.name as string;
+    const content = response.content as string;
+    const totalLength = response.totalLength as number;
+    const truncated = response.truncated as boolean;
+
+    let header = `Document: ${name}`;
+    if (truncated) {
+      header += ` (showing ${content.length} of ${totalLength} chars)`;
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: `${header}\n\n${content}` }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);
