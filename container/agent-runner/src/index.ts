@@ -471,6 +471,46 @@ async function runQuery(
       resultCount++;
       const textResult = 'result' in message ? (message as { result?: string }).result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+
+      // Log cache metrics for observability
+      const resultMsg = message as {
+        usage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadInputTokens?: number;
+          cacheCreationInputTokens?: number;
+          costUSD?: number;
+        };
+        total_cost_usd?: number;
+      };
+      if (resultMsg.usage) {
+        const u = resultMsg.usage;
+        const totalInput = (u.inputTokens || 0) + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
+        const cacheHitRate = totalInput > 0
+          ? ((u.cacheReadInputTokens || 0) / totalInput * 100).toFixed(1)
+          : '0.0';
+        log(`Cache metrics: input=${u.inputTokens || 0} cacheRead=${u.cacheReadInputTokens || 0} cacheCreation=${u.cacheCreationInputTokens || 0} output=${u.outputTokens || 0} hitRate=${cacheHitRate}% cost=$${(u.costUSD || resultMsg.total_cost_usd || 0).toFixed(4)}`);
+
+        // Append to cache-metrics.jsonl for ongoing observability
+        try {
+          const metricsDir = '/workspace/group/logs';
+          fs.mkdirSync(metricsDir, { recursive: true });
+          const metricsLine = JSON.stringify({
+            timestamp: new Date().toISOString(),
+            groupFolder: containerInput.groupFolder,
+            inputTokens: u.inputTokens || 0,
+            outputTokens: u.outputTokens || 0,
+            cacheReadInputTokens: u.cacheReadInputTokens || 0,
+            cacheCreationInputTokens: u.cacheCreationInputTokens || 0,
+            cacheHitRate: parseFloat(cacheHitRate),
+            costUSD: u.costUSD || resultMsg.total_cost_usd || 0,
+          }) + '\n';
+          fs.appendFileSync(path.join(metricsDir, 'cache-metrics.jsonl'), metricsLine);
+        } catch {
+          // Non-critical — don't fail the query for metrics logging
+        }
+      }
+
       writeOutput({
         status: 'success',
         result: textResult || null,
