@@ -473,42 +473,64 @@ async function runQuery(
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
 
       // Log cache metrics for observability
+      // The SDK's result.usage is NonNullableUsage (snake_case from Anthropic API BetaUsage).
+      // The SDK's result.modelUsage is Record<string, ModelUsage> (camelCase, per-model).
+      // We read from both: usage (snake_case) as primary, modelUsage (camelCase) as fallback.
       const resultMsg = message as {
-        usage?: {
+        usage?: Record<string, unknown>;
+        modelUsage?: Record<string, {
           inputTokens?: number;
           outputTokens?: number;
           cacheReadInputTokens?: number;
           cacheCreationInputTokens?: number;
           costUSD?: number;
-        };
+        }>;
         total_cost_usd?: number;
       };
-      if (resultMsg.usage) {
-        const u = resultMsg.usage;
-        const totalInput = (u.inputTokens || 0) + (u.cacheReadInputTokens || 0) + (u.cacheCreationInputTokens || 0);
-        const cacheHitRate = totalInput > 0
-          ? ((u.cacheReadInputTokens || 0) / totalInput * 100).toFixed(1)
-          : '0.0';
-        log(`Cache metrics: input=${u.inputTokens || 0} cacheRead=${u.cacheReadInputTokens || 0} cacheCreation=${u.cacheCreationInputTokens || 0} output=${u.outputTokens || 0} hitRate=${cacheHitRate}% cost=$${(u.costUSD || resultMsg.total_cost_usd || 0).toFixed(4)}`);
 
-        // Append to cache-metrics.jsonl for ongoing observability
-        try {
-          const metricsDir = '/workspace/group/logs';
-          fs.mkdirSync(metricsDir, { recursive: true });
-          const metricsLine = JSON.stringify({
-            timestamp: new Date().toISOString(),
-            groupFolder: containerInput.groupFolder,
-            inputTokens: u.inputTokens || 0,
-            outputTokens: u.outputTokens || 0,
-            cacheReadInputTokens: u.cacheReadInputTokens || 0,
-            cacheCreationInputTokens: u.cacheCreationInputTokens || 0,
-            cacheHitRate: parseFloat(cacheHitRate),
-            costUSD: u.costUSD || resultMsg.total_cost_usd || 0,
-          }) + '\n';
-          fs.appendFileSync(path.join(metricsDir, 'cache-metrics.jsonl'), metricsLine);
-        } catch {
-          // Non-critical — don't fail the query for metrics logging
+      // Extract from usage (snake_case — BetaUsage / NonNullableUsage)
+      const u = resultMsg.usage || {};
+      let inputTokens = (u.input_tokens as number) || 0;
+      let outputTokens = (u.output_tokens as number) || 0;
+      let cacheRead = (u.cache_read_input_tokens as number) || 0;
+      let cacheCreation = (u.cache_creation_input_tokens as number) || 0;
+      let costUSD = resultMsg.total_cost_usd || 0;
+
+      // Fallback: aggregate from modelUsage (camelCase — ModelUsage per-model)
+      if (inputTokens === 0 && resultMsg.modelUsage) {
+        for (const mu of Object.values(resultMsg.modelUsage)) {
+          inputTokens += mu.inputTokens || 0;
+          outputTokens += mu.outputTokens || 0;
+          cacheRead += mu.cacheReadInputTokens || 0;
+          cacheCreation += mu.cacheCreationInputTokens || 0;
+          costUSD += mu.costUSD || 0;
         }
+      }
+
+      const totalInput = inputTokens + cacheRead + cacheCreation;
+      const cacheHitRate = totalInput > 0
+        ? (cacheRead / totalInput * 100).toFixed(1)
+        : '0.0';
+
+      log(`Cache metrics: input=${inputTokens} cacheRead=${cacheRead} cacheCreation=${cacheCreation} output=${outputTokens} hitRate=${cacheHitRate}% cost=$${costUSD.toFixed(4)}`);
+
+      // Append to cache-metrics.jsonl for ongoing observability
+      try {
+        const metricsDir = '/workspace/group/logs';
+        fs.mkdirSync(metricsDir, { recursive: true });
+        const metricsLine = JSON.stringify({
+          timestamp: new Date().toISOString(),
+          groupFolder: containerInput.groupFolder,
+          inputTokens,
+          outputTokens,
+          cacheReadInputTokens: cacheRead,
+          cacheCreationInputTokens: cacheCreation,
+          cacheHitRate: parseFloat(cacheHitRate),
+          costUSD,
+        }) + '\n';
+        fs.appendFileSync(path.join(metricsDir, 'cache-metrics.jsonl'), metricsLine);
+      } catch {
+        // Non-critical — don't fail the query for metrics logging
       }
 
       writeOutput({
